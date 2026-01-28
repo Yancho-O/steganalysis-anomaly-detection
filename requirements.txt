@@ -1,0 +1,8 @@
+numpy
+pandas
+pillow
+scipy
+scikit-learn
+joblib
+typer
+matplotlib
