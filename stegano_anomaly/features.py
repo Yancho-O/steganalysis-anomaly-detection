@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Tuple, Optional, Iterable, List
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image
@@ -40,11 +41,9 @@ def _moments(x: np.ndarray) -> Tuple[float, float, float, float]:
     if std == 0.0:
         return mu, var, 0.0, 0.0
     z = (x - mu) / std
-    skew = float(np.mean(z ** 3))
-    kurt = float(np.mean(z ** 4)) - 3.0
+    skew = float(np.mean(z**3))
+    kurt = float(np.mean(z**4)) - 3.0
     return mu, var, skew, kurt
-
-import math
 
 def _histogram(x: np.ndarray, bins: int, rng: Tuple[float, float]) -> np.ndarray:
     h, _ = np.histogram(x, bins=bins, range=rng, density=True)
@@ -73,7 +72,7 @@ def _blockwise_dct_hist(img: np.ndarray, block: int, bins: int) -> np.ndarray:
     mags: List[np.ndarray] = []
     for i in range(0, Hc, block):
         for j in range(0, Wc, block):
-            b = x[i:i+block, j:j+block]
+            b = x[i : i + block, j : j + block]
             # 2D DCT-II
             d = fftpack.dct(fftpack.dct(b.T, norm="ortho").T, norm="ortho")
             # Ignore DC; take magnitudes of AC coefficients
@@ -90,7 +89,8 @@ def _blockwise_dct_hist(img: np.ndarray, block: int, bins: int) -> np.ndarray:
     vmax = max(vmax, 1e-6)
     return _histogram(v, bins=bins, rng=(0.0, vmax))
 
-def extract_features(path: Path, cfg: FeatureConfig = FeatureConfig()) -> Dict[str, float]:
+def extract_features(path: Path, cfg: Optional[FeatureConfig] = None) -> Dict[str, float]:
+    cfg = cfg or FeatureConfig()
     img = _load_image(path, cfg)
 
     feats: Dict[str, float] = {}

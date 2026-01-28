@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, Tuple
+from typing import Tuple
 
 import numpy as np
-from sklearn.metrics import roc_auc_score, average_precision_score, precision_recall_curve, roc_curve
+from sklearn.metrics import (
+    average_precision_score,
+    precision_recall_curve,
+    roc_auc_score,
+    roc_curve,
+)
+
 
 @dataclass(frozen=True)
 class Metrics:
@@ -22,4 +28,9 @@ def compute_metrics(y_true: np.ndarray, scores: np.ndarray) -> Metrics:
 
     prec, rec, pr_thr = precision_recall_curve(y_true, scores)
     fpr, tpr, roc_thr = roc_curve(y_true, scores)
-    return Metrics(roc_auc=roc_auc, average_precision=ap, pr_curve=(prec, rec, pr_thr), roc_curve=(fpr, tpr, roc_thr))
+    return Metrics(
+        roc_auc=roc_auc,
+        average_precision=ap,
+        pr_curve=(prec, rec, pr_thr),
+        roc_curve=(fpr, tpr, roc_thr),
+    )

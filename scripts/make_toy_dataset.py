@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
+
 
 def random_cover(rng: np.random.Generator, size: int = 256) -> np.ndarray:
     # Create a smooth-ish image by filtering random noise and adding gradients.
@@ -28,8 +30,18 @@ def main():
     ap.add_argument("--out", type=Path, default=Path("data/toy"), help="Output root directory.")
     ap.add_argument("--n", type=int, default=600, help="Total images.")
     ap.add_argument("--size", type=int, default=256, help="Image size (NxN).")
-    ap.add_argument("--stego_rate", type=float, default=0.5, help="Fraction labeled as stego/anomaly.")
-    ap.add_argument("--embed_rate", type=float, default=0.15, help="LSB flip rate for stego samples.")
+    ap.add_argument(
+        "--stego_rate",
+        type=float,
+        default=0.5,
+        help="Fraction labeled as stego/anomaly.",
+    )
+    ap.add_argument(
+        "--embed_rate",
+        type=float,
+        default=0.15,
+        help="LSB flip rate for stego samples.",
+    )
     ap.add_argument("--seed", type=int, default=123, help="RNG seed.")
     args = ap.parse_args()
 

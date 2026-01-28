@@ -2,20 +2,98 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 import joblib
-import numpy as np
 import pandas as pd
 import typer
 
 from .data import build_records
-from .features import FeatureConfig, extract_features
-from .models import build_model, anomaly_score, available_models
 from .eval import compute_metrics
+from .features import FeatureConfig, extract_features
+from .models import anomaly_score, available_models, build_model
 from .utils import ensure_dir, sha256_file
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
+
+IMAGES_DIR_ARG = typer.Argument(
+    ...,
+    help="Directory containing images (recursively scanned).",
+)
+OUT_FEATURES_OPT = typer.Option(
+    Path("artifacts/features.csv"),
+    "--out",
+    help="Output features CSV/Parquet.",
+)
+LABELS_CSV_OPT = typer.Option(
+    None,
+    help="Optional CSV with headers filename,label.",
+)
+LABEL_FROM_PARENT_OPT = typer.Option(
+    False,
+    help="Infer labels from parent folder name (clean/stego).",
+)
+RESIZE_OPT = typer.Option(
+    256,
+    help="Resize images to NxN for stable features (0 disables).",
+)
+COLOR_OPT = typer.Option(
+    False,
+    help="Use color instead of grayscale.",
+)
+N_LIMIT_OPT = typer.Option(
+    None,
+    help="Optional limit on number of images (for quick experiments).",
+)
+
+FEATURES_PATH_ARG = typer.Argument(
+    ...,
+    help="Features CSV/Parquet produced by extract.",
+)
+MODEL_NAME_OPT = typer.Option(
+    "iforest",
+    "--model",
+    help="Model baseline name. See `models`.",
+)
+OUT_MODEL_OPT = typer.Option(
+    Path("artifacts/model.joblib"),
+    "--out",
+    help="Output model file.",
+)
+SUPERVISED_OPT = typer.Option(
+    None,
+    help="Force supervised/unsupervised; default inferred from labels.",
+)
+TEST_SIZE_OPT = typer.Option(
+    0.25,
+    help="Holdout proportion for evaluation report.",
+)
+RANDOM_STATE_OPT = typer.Option(
+    42,
+    help="RNG seed.",
+)
+OUT_REPORT_OPT = typer.Option(
+    Path("artifacts/report.json"),
+    help="Write metrics report JSON (if labels exist).",
+)
+OUT_PLOTS_DIR_OPT = typer.Option(
+    Path("artifacts/plots"),
+    help="Write ROC/PR plots (if labels exist).",
+)
+
+MODEL_PATH_ARG = typer.Argument(
+    ...,
+    help="Model produced by train.",
+)
+FEATURES_PATH_ARG_PRED = typer.Argument(
+    ...,
+    help="Features CSV/Parquet.",
+)
+OUT_SCORES_OPT = typer.Option(
+    Path("artifacts/scores.csv"),
+    "--out",
+    help="Output CSV with anomaly scores.",
+)
 
 def _save_df(df: pd.DataFrame, out: Path) -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -38,13 +116,13 @@ def list_models():
 
 @app.command("extract")
 def extract_cmd(
-    images_dir: Path = typer.Argument(..., help="Directory containing images (recursively scanned)."),
-    out_features: Path = typer.Option(Path("artifacts/features.csv"), "--out", help="Output features CSV/Parquet."),
-    labels_csv: Optional[Path] = typer.Option(None, help="Optional CSV with headers filename,label."),
-    label_from_parent: bool = typer.Option(False, help="Infer labels from parent folder name (clean/stego)."),
-    resize: int = typer.Option(256, help="Resize images to NxN for stable features (0 disables)."),
-    color: bool = typer.Option(False, help="Use color instead of grayscale."),
-    n_limit: Optional[int] = typer.Option(None, help="Optional limit on number of images (for quick experiments)."),
+    images_dir: Path = IMAGES_DIR_ARG,
+    out_features: Path = OUT_FEATURES_OPT,
+    labels_csv: Optional[Path] = LABELS_CSV_OPT,
+    label_from_parent: bool = LABEL_FROM_PARENT_OPT,
+    resize: int = RESIZE_OPT,
+    color: bool = COLOR_OPT,
+    n_limit: Optional[int] = N_LIMIT_OPT,
 ):
     """Extract engineered features from images."""
     cfg = FeatureConfig(
@@ -71,14 +149,14 @@ def extract_cmd(
 
 @app.command("train")
 def train_cmd(
-    features_path: Path = typer.Argument(..., help="Features CSV/Parquet produced by extract."),
-    model_name: str = typer.Option("iforest", "--model", help="Model baseline name. See `models`."),
-    out_model: Path = typer.Option(Path("artifacts/model.joblib"), "--out", help="Output model file."),
-    supervised: Optional[bool] = typer.Option(None, help="Force supervised/unsupervised; default inferred from labels."),
-    test_size: float = typer.Option(0.25, help="Holdout proportion for evaluation report."),
-    random_state: int = typer.Option(42, help="RNG seed."),
-    out_report: Path = typer.Option(Path("artifacts/report.json"), help="Write metrics report JSON (if labels exist)."),
-    out_plots_dir: Path = typer.Option(Path("artifacts/plots"), help="Write ROC/PR plots (if labels exist)."),
+    features_path: Path = FEATURES_PATH_ARG,
+    model_name: str = MODEL_NAME_OPT,
+    out_model: Path = OUT_MODEL_OPT,
+    supervised: Optional[bool] = SUPERVISED_OPT,
+    test_size: float = TEST_SIZE_OPT,
+    random_state: int = RANDOM_STATE_OPT,
+    out_report: Path = OUT_REPORT_OPT,
+    out_plots_dir: Path = OUT_PLOTS_DIR_OPT,
 ):
     """Train a baseline model; optionally evaluate if labels exist."""
     import matplotlib.pyplot as plt
@@ -98,19 +176,37 @@ def train_cmd(
 
     if has_labels:
         y = df["label"].to_numpy(dtype=int)
-        X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=test_size, random_state=random_state, stratify=y)
+        X_tr, X_te, y_tr, y_te = train_test_split(
+            X,
+            y,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=y,
+        )
     else:
         y_tr = None
         X_tr, X_te = X, None
 
-    model = build_model(model_name, supervised=supervised, random_state=random_state)
+    model = build_model(
+        model_name,
+        supervised=supervised,
+        random_state=random_state,
+    )
     if supervised:
         model.fit(X_tr, y_tr)
     else:
         model.fit(X_tr)
 
     out_model.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump({"model": model, "feature_cols": feature_cols, "model_name": model_name, "supervised": supervised}, out_model)
+    joblib.dump(
+        {
+            "model": model,
+            "feature_cols": feature_cols,
+            "model_name": model_name,
+            "supervised": supervised,
+        },
+        out_model,
+    )
     typer.echo(f"Saved model to {out_model}")
 
     if has_labels and X_te is not None:
@@ -158,9 +254,9 @@ def train_cmd(
 
 @app.command("predict")
 def predict_cmd(
-    model_path: Path = typer.Argument(..., help="Model produced by train."),
-    features_path: Path = typer.Argument(..., help="Features CSV/Parquet."),
-    out_scores: Path = typer.Option(Path("artifacts/scores.csv"), "--out", help="Output CSV with anomaly scores."),
+    model_path: Path = MODEL_PATH_ARG,
+    features_path: Path = FEATURES_PATH_ARG_PRED,
+    out_scores: Path = OUT_SCORES_OPT,
 ):
     """Score feature rows; higher score => more anomalous."""
     bundle = joblib.load(model_path)
@@ -170,7 +266,10 @@ def predict_cmd(
     df = _load_df(features_path)
     missing = [c for c in feature_cols if c not in df.columns]
     if missing:
-        raise typer.BadParameter(f"Missing feature columns in features file: {missing[:10]}{'...' if len(missing)>10 else ''}")
+        suffix = "..." if len(missing) > 10 else ""
+        raise typer.BadParameter(
+            f"Missing feature columns in features file: {missing[:10]}{suffix}",
+        )
 
     X = df[feature_cols].to_numpy(dtype=float)
     scores = anomaly_score(model, X)
